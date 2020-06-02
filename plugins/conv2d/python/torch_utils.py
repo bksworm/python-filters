@@ -33,28 +33,24 @@ def get_np_dtype(fmt: GstVideo.VideoFormat) -> np.number:
     return _NP_DTYPES.get(format_info.bits, np.uint8)
 
 
-def gst_buffer_to_tensor(buffer: Gst.Buffer, *, width: int, height: int, 
+def gst_buffer_for_tensor(buffer: Gst.Buffer, *, width: int, height: int, 
                           channels: int,
-                          dtype: np.dtype, bpp: int = 1) ->  torch.tensor:
+                          dtype: np.dtype, bpp: int = 1) ->  np.ndarray:
     """Converts Gst.Buffer with known format (w, h, c, dtype) to np.ndarray"""
     with map_gst_buffer(buffer, Gst.MapFlags.READ) as mapped:
-        tmp = np.ndarray((buffer.get_size() // (bpp // BITS_PER_BYTE)),
+        result = np.ndarray((buffer.get_size() // (bpp // BITS_PER_BYTE)),
                             buffer=mapped, dtype=dtype)
-        result = torch.tensor(tmp)
-
-        if channels > 0:
-            result = torch.reshape( result, (1, channels, height, width))
-        else:
-            result = torch.reshape( result, (1, 1, height, width))
+        #make 2d array form memory buf
+        result = result.reshape(height,width).squeeze()
         return result
 
 
-def gst_buffer_with_pad_to_tensor(buffer: Gst.Buffer, pad: Gst.Pad) -> torch.tensor:
+def gst_buffer_with_pad_for_tensor(buffer: Gst.Buffer, pad: Gst.Pad) -> np.ndarray:
     """Converts Gst.Buffer with Gst.Pad (stores Gst.Caps) to np.ndarray """
     return gst_buffer_with_caps_to_tensor(buffer, pad.get_current_caps())
 
 
-def gst_buffer_with_caps_to_tensor(buffer: Gst.Buffer, caps: Gst.Caps) -> torch.tensor:
+def gst_buffer_with_caps_for_tensor(buffer: Gst.Buffer, caps: Gst.Caps) -> np.ndarray:
     """ Converts Gst.Buffer with Gst.Caps (stores buffer info) to np.ndarray """
 
     structure = caps.get_structure(0)  # Gst.Structure
@@ -70,7 +66,7 @@ def gst_buffer_with_caps_to_tensor(buffer: Gst.Buffer, caps: Gst.Caps) -> torch.
 
     format_info = GstVideo.VideoFormat.get_info(video_format)  # GstVideo.VideoFormatInfo
 
-    return gst_buffer_to_tensor(buffer, width=width, height=height, channels=channels,
+    return gst_buffer_for_tensor(buffer, width=width, height=height, channels=channels,
                                  dtype=dtype, bpp=format_info.bits)
 
 

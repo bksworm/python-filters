@@ -12,7 +12,7 @@ from torch import nn
 import torch
 
 from gstreamer import Gst, GObject, GLib, GstBase
-from gstreamer.utils import gst_buffer_with_caps_to_ndarray 
+from torch_utils import gst_buffer_with_caps_for_tensor
 
 
 FORMATS = "{GRAY8}"
@@ -116,8 +116,8 @@ class GstUvConv2d(GstBase.BaseTransform):
             caps = self.sinkpad.get_current_caps()
             #it's a reference on GstBuffer data
             #if you modify it output will be modified as well
-            image = gst_buffer_with_caps_to_ndarray(buffer, caps)
-            h, w, c = image.shape
+            image = gst_buffer_with_caps_for_tensor(buffer, caps)
+            h, w  = image.shape
             #convert to tensor
             t = torch.tensor(image, dtype=torch.uint8)
 
@@ -130,18 +130,21 @@ class GstUvConv2d(GstBase.BaseTransform):
                 t = torch.where( t< self.minimal, self.zeros_vec, t)
 
             #we have to reshape to pytorch format (N,C,H,W)
-            t = torch.reshape( t, (1, c, h, w))
+            t = torch.reshape( t, (1, 1, h, w))
             t = self.apply_conv(t)
+
             #clear output
             image.fill(0) 
-            #detach from pytorch context and copy to numpy.nddarray
+            #detach from pytorch context and copy to numpy.nddarray[w,h]
             conved = t[0,0, :, :].cpu().detach().numpy()
+
             #simple contrast
             if self.contrast == True :
               conved = simpleContrast(conved)
+              
             #copy to top left coner
             ch, cw= conved.shape 
-            image[:ch,:cw,0] = conved
+            image[:ch,:cw] = conved
         except Exception as e:
             logging.error(e)
 
@@ -168,6 +171,6 @@ def histContrast(img: np.ndarray) ->  np.ndarray :
   cdf = np.cumsum(h)
   first_nonzero_ind = np.nonzero(cdf)[0]
   minCdf = cdf[first_nonzero_ind]
-  div = (img.size-1.0)*255.0
-  out_img = ((cdf[img]-minCdf)/div).astype("ubyte")
+  div = (img.size-1.0)
+  out_img = (255.0*(cdf[img]-minCdf)/div).astype("ubyte")
   return out_img
