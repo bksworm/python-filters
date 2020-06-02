@@ -14,19 +14,8 @@ import torch
 from gstreamer import Gst, GObject, GLib, GstBase
 from gstreamer.utils import gst_buffer_with_caps_to_ndarray 
 
-DEFAULT_KERNEL_SIZE = 3
 
-
-sum3x3 = torch.tensor([[ 1,1,1],
-                  [1,1,1],
-                  [1,1,1]], dtype=torch.uint8)
-
-sum2x2 = torch.tensor([[ 1,1],
-                  [1,1]], dtype=torch.uint8)
-
-FORMATS = "{I420,GRAY8}"
-#imageformat=mono8 width=720 height=540
-# width=1280 height=1500 sink_1::xpos=0 sink_1::ypos=960
+FORMATS = "{GRAY8}"
 
 class GstUvConv2d(GstBase.BaseTransform):
 
@@ -59,13 +48,10 @@ class GstUvConv2d(GstBase.BaseTransform):
                    0,  # default
                    GObject.ParamFlags.READWRITE  # flags
                    ),
-
-        "max": (GObject.TYPE_INT64,  # type
-                   "Maximum value",  # nick
-                   "Clip maximum value",  # blurb
-                   1,  # min
-                   255,  # max
-                   255,  # default
+        "contrast": (GObject.TYPE_BOOLEAN,  # type
+                   "Simple contrast ",  # nick
+                   "Simple contrast after conv2d",  # blurb
+                   False,  # default
                    GObject.ParamFlags.READWRITE  # flags
                    ),
         "kernel-size": (GObject.TYPE_INT64,  # type
@@ -82,8 +68,8 @@ class GstUvConv2d(GstBase.BaseTransform):
 
         super(GstUvConv2d, self).__init__()
         self.minimal = 0
-        self.maximal = 255
         self.kernel_size = 2
+        self.contrast = False
         self.kernel = None
         self.conv = None
         # zeros_vec will be activated as soon we new conv2d
@@ -107,20 +93,20 @@ class GstUvConv2d(GstBase.BaseTransform):
     def do_get_property(self, prop: GObject.GParamSpec):
         if prop.name == 'min':
             return self.minimal
-        elif prop.name == 'max':
-            return self.maximal
         elif prop.name == 'kernel-size':
             return self.kernel_size
+        elif prop.name == 'contrast':
+            return self.contrast
         else:
             raise AttributeError('unknown property %s' % prop.name)
 
     def do_set_property(self, prop: GObject.GParamSpec, value):
         if prop.name == 'min':
             self.minimal = value
-        elif prop.name == 'max':
-            self.maximal = value
         elif prop.name == 'kernel-size':
             self.set_kernel(value)
+        elif prop.name == 'contrast':
+            self.contrast = value
         else:
             raise AttributeError('unknown property %s' % prop.name)
 
@@ -150,6 +136,9 @@ class GstUvConv2d(GstBase.BaseTransform):
             image.fill(0) 
             #detach from pytorch context and copy to numpy.nddarray
             conved = t[0,0, :, :].cpu().detach().numpy()
+            #simple contrast
+            if self.contrast == True :
+              conved = simpleContrast(conved)
             #copy to top left coner
             ch, cw= conved.shape 
             image[:ch,:cw,0] = conved
@@ -159,9 +148,26 @@ class GstUvConv2d(GstBase.BaseTransform):
         return Gst.FlowReturn.OK
 
 
+
 # Required for registering plugin dynamically
 # Explained:
 # http://lifestyletransfer.com/how-to-write-gstreamer-plugin-with-python/
 GObject.type_register(GstUvConv2d)
 __gstelementfactory__ = (GstUvConv2d.GST_PLUGIN_NAME,
                          Gst.Rank.NONE, GstUvConv2d)
+
+def simpleContrast(img: np.ndarray) ->  np.ndarray:
+  img_min= img.min()
+  img_over = (img.max()-img_min)
+  img_over = (255 / (img.max()-img_min)) if img_over != 0 else 255
+
+  return ((img - img_min)*img_over).astype("uint8")
+
+def histContrast(img: np.ndarray) ->  np.ndarray :
+  h, bin_edges = np.histogram(img, bins=256)
+  cdf = np.cumsum(h)
+  first_nonzero_ind = np.nonzero(cdf)[0]
+  minCdf = cdf[first_nonzero_ind]
+  div = (img.size-1.0)*255.0
+  out_img = ((cdf[img]-minCdf)/div).astype("ubyte")
+  return out_img
