@@ -1,0 +1,13 @@
+#igonore outputs
+*.mkv
+*.ts
+*.mp4
+*.avi
+*.jpg
+*.jpeg
+*.mjpg
+*.png
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
