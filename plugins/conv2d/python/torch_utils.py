@@ -36,12 +36,15 @@ def get_np_dtype(fmt: GstVideo.VideoFormat) -> np.number:
 def gst_buffer_for_tensor(buffer: Gst.Buffer, *, width: int, height: int, 
                           channels: int,
                           dtype: np.dtype, bpp: int = 1) ->  np.ndarray:
-    """Converts Gst.Buffer with known format (w, h, c, dtype) to np.ndarray"""
+    """Converts Gst.Buffer with known format (w, h, dtype) to np.ndarray"""
     with map_gst_buffer(buffer, Gst.MapFlags.READ) as mapped:
         result = np.ndarray((buffer.get_size() // (bpp // BITS_PER_BYTE)),
                             buffer=mapped, dtype=dtype)
-        #make 2d array form memory buf
-        result = result.reshape(height,width).squeeze()
+        #make (c,h,w) array from memory buf
+        if channels > 0 :
+            result = result.reshape(channels, height, width)
+        else : #make (c,w,h) array form memory buf   
+            result = result.reshape(height,width)
         return result
 
 
@@ -66,7 +69,8 @@ def gst_buffer_with_caps_for_tensor(buffer: Gst.Buffer, caps: Gst.Caps) -> np.nd
 
     format_info = GstVideo.VideoFormat.get_info(video_format)  # GstVideo.VideoFormatInfo
 
-    return gst_buffer_for_tensor(buffer, width=width, height=height, channels=channels,
+    return gst_buffer_for_tensor(buffer, width=width, height=height, 
+                                 channels=channels,
                                  dtype=dtype, bpp=format_info.bits)
 
 

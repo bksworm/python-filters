@@ -117,10 +117,9 @@ class GstUvConv2d(GstBase.BaseTransform):
             #it's a reference on GstBuffer data
             #if you modify it output will be modified as well
             image = gst_buffer_with_caps_for_tensor(buffer, caps)
-            h, w  = image.shape
+            c, h, w  = image.shape
             #convert to tensor
             t = torch.tensor(image, dtype=torch.uint8)
-
             #clip low level signals to 0
             if self.minimal > 0:
                 if self.zeros_vec == None:
@@ -130,7 +129,7 @@ class GstUvConv2d(GstBase.BaseTransform):
                 t = torch.where( t< self.minimal, self.zeros_vec, t)
 
             #we have to reshape to pytorch format (N,C,H,W)
-            t = torch.reshape( t, (1, 1, h, w))
+            t = torch.reshape( t, (1, c, h, w))
             t = self.apply_conv(t)
 
             #clear output
@@ -141,10 +140,10 @@ class GstUvConv2d(GstBase.BaseTransform):
             #simple contrast
             if self.contrast == True :
               conved = simpleContrast(conved)
-              
+
             #copy to top left coner
             ch, cw= conved.shape 
-            image[:ch,:cw] = conved
+            image[0, :ch,:cw] = conved
         except Exception as e:
             logging.error(e)
 
@@ -169,8 +168,21 @@ def simpleContrast(img: np.ndarray) ->  np.ndarray:
 def histContrast(img: np.ndarray) ->  np.ndarray :
   h, bin_edges = np.histogram(img, bins=256)
   cdf = np.cumsum(h)
-  first_nonzero_ind = np.nonzero(cdf)[0]
-  minCdf = cdf[first_nonzero_ind]
+  indxs = np.nonzero(cdf)
+  #logging.info(indxs[0][0])
+  minCdf = cdf[indxs[0][0]]
   div = (img.size-1.0)
   out_img = (255.0*(cdf[img]-minCdf)/div).astype("ubyte")
+  return out_img
+
+def autoMinMax(img, skipPart=0.00):
+  line=np.sort(img.flatten())
+  return line[round(img.size * skipPart)],line[-round(img.size * skipPart)]
+
+def autoContract(img):
+  img_f = img.astype("float64")
+  minVal, maxVal = autoMinMax(img_f)
+  out_img_f = (img-minVal)*(255.0/(maxVal-minVal))
+  out_img_f = np.clip(out_img_f, 0.0, 255.0)
+  out_img = out_img_f.astype("uint8")
   return out_img
