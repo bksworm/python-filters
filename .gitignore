@@ -11,3 +11,9 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*.so
+canny/**/*.html
+canny/**/*.c
+canny/build/
+canny/tst/
+
